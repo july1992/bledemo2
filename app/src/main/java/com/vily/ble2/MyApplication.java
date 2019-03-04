@@ -1,6 +1,8 @@
 package com.vily.ble2;
 
 import android.app.Application;
+import android.content.Context;
+import android.os.Handler;
 
 import com.zhy.http.okhttp.OkHttpUtils;
 
@@ -15,7 +17,13 @@ import okhttp3.OkHttpClient;
  *  
  **/
 public class MyApplication extends Application {
-
+    private static Context context;
+    //全局的handler
+    private static Handler mHandler;
+    //主线程
+    private static Thread mMainThread;
+    //主线程id
+    private static int mMainThreadId;
     @Override
     public void onCreate() {
         super.onCreate();
@@ -28,5 +36,23 @@ public class MyApplication extends Application {
                 .build();
 
         OkHttpUtils.initClient(okHttpClient);
+    }
+
+
+    public static Handler getHandler() {
+        return mHandler;
+    }
+
+    public static Thread getMainThread() {
+        return mMainThread;
+    }
+    public static int getMainThreadId() {
+        return mMainThreadId;
+    }
+
+
+
+    public static Context getContext() {
+        return context;
     }
 }

@@ -30,6 +30,10 @@ import com.inuker.bluetooth.library.BluetoothClient;
 import com.inuker.bluetooth.library.search.SearchRequest;
 import com.inuker.bluetooth.library.search.SearchResult;
 import com.inuker.bluetooth.library.search.response.SearchResponse;
+import com.vily.ble2.utils.FileUtils;
+import com.vily.ble2.utils.SharedPreferencesUtil;
+import com.vily.ble2.utils.ThreadUtils;
+import com.vily.ble2.utils.UIUtil;
 import com.zhy.http.okhttp.OkHttpUtils;
 import com.zhy.http.okhttp.callback.Callback;
 
@@ -37,6 +41,8 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import okhttp3.Call;
 import okhttp3.Response;
@@ -59,6 +65,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private boolean loop = false;
 
     private List<BleBean> mList = new ArrayList<>();
+    private List<BleBean> mSaveList = new ArrayList<>();
+
+
     private RecyclerView mRv_recycle;
     private BleAdapter mBleAdapter;
     private long mStartTime = 0;
@@ -74,6 +83,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private boolean scan = true;
     private BluetoothClient mClient;
     private SearchRequest mRequest;
+    private Timer mTimer;
+    private Button mBtn_save;
+    private EditText mEt_intervel;
+
+    private boolean isNet = true;  //是否走网络请求
 
 
     @Override
@@ -107,7 +121,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             Intent locationIntent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
             this.startActivityForResult(locationIntent, REQUEST_CODE_LOCATION_SETTINGS);
         }
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
 
+            //请求权限
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    222);
+        }
 
     }
 
@@ -126,12 +147,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mBtn_send = findViewById(R.id.btn_send);
         mBtn_send_loop = findViewById(R.id.btn_send_loop);
         mBtn_cancel = findViewById(R.id.btn_cancel);
+        mBtn_save = findViewById(R.id.btn_save);
 
         mPb_progress = findViewById(R.id.pb_progress);
 
         mRv_recycle = findViewById(R.id.rv_recycle);
 
         mEt_time = findViewById(R.id.et_time);
+        mEt_intervel = findViewById(R.id.et_intervel);
 
     }
 
@@ -150,12 +173,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mBtn_send.setOnClickListener(this);
         mBtn_send_loop.setOnClickListener(this);
         mBtn_cancel.setOnClickListener(this);
+        mBtn_save.setOnClickListener(this);
 
         // 初始化蓝牙扫描
         // 先扫BLE设备3次，每次3s
-// 再扫经典蓝牙5s
-// 再扫BLE设备2s
-
+        // 再扫经典蓝牙5s
+        // 再扫BLE设备2s
 
 
         mRv_recycle.setLayoutManager(new LinearLayoutManager(MainActivity.this));
@@ -203,27 +226,70 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         switch (v.getId()) {
 
             case R.id.btn_send:   //  发送
+
                 scan = true;
                 loop = false;
-
-
                 senBle();
 
                 break;
             case R.id.btn_send_loop:   // 定时发送
+
                 scan = true;
                 loop = true;
                 senBle();
                 break;
             case R.id.btn_cancel:  // 停止定时发送
-                loop = false;
-                scan = false; // 停止扫描
-                mList.clear();
 
+                stopScan();
                 mClient.stopSearch();
-                mBtn_send.setEnabled(true);
-                mBtn_send_loop.setEnabled(true);
 
+
+                break;
+            case R.id.btn_save:   // 存到手机里   每隔一段时间执行一次
+                mBtn_save.setEnabled(false);
+                isNet = false;
+                scan = true;
+                loop = true;
+
+                mSaveList.clear();
+
+//                FileUtils.write(22);
+
+                int interval = 20 * 1000;   // 默认20秒
+                String trim = mEt_intervel.getText().toString().trim();
+                if (!TextUtils.isEmpty(trim)) {
+                    interval = Integer.parseInt(trim);
+                }
+
+
+                if (mTimer == null) {
+                    mTimer = new Timer();
+                }
+                mTimer.schedule(new TimerTask() {
+                    @Override
+                    public void run() {
+                        // 停止扫描
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                stopScan();
+                                mClient.stopSearch();
+
+                                int sum=0;
+                                for(int i=0;i<mSaveList.size();i++){
+
+                                    sum=sum+mSaveList.get(i).getRssi();
+                                }
+                                Log.i(TAG, "run: ----------length:" + mSaveList.size()  +"---sum:"+sum);
+                                // 保存到手机
+                                FileUtils.write(sum/mSaveList.size() );
+                            }
+                        });
+
+                    }
+                }, interval);
+
+                senBle();
                 break;
             default:
                 break;
@@ -249,13 +315,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             @Override
             public void onDeviceFounded(SearchResult bleDevice) {
 
-                Log.i(TAG, "onDeviceFounded: ------------------bleDevice:"+bleDevice.rssi);
+                Log.i(TAG, "onDeviceFounded: ------------------bleDevice:" + bleDevice.rssi);
                 // 扫描到一个符合扫描规则的BLE设备
                 if (bleDevice != null) {
                     if (!TextUtils.isEmpty(bleDevice.device.getAddress())) {
-                        BleBean bleBean = new BleBean(bleDevice.getName(), bleDevice.getAddress(), bleDevice.rssi);
-                        mList.add(bleBean);
-                        mBleAdapter.addData(bleBean);
+                        // 将rssi 不为0 的保存
+                        if (bleDevice.rssi < 0) {
+                            Log.i(TAG, "onDeviceFounded: --------add:"+bleDevice.device.getAddress()+ "---rssi:"+bleDevice.rssi);
+                            BleBean bleBean = new BleBean(bleDevice.getName(), bleDevice.getAddress(), bleDevice.rssi);
+                            mList.add(bleBean);
+                            mBleAdapter.addData(bleBean);
+                            mSaveList.add(bleBean);
+
+                        }
                     }
                 }
 
@@ -270,17 +342,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 
                 if (scan) {
-                    // 去网络请求
-                    if (mList != null && mList.size() > 0) {
-                        new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                request(mList);
-                            }
-                        }).start();
-                    } else {
-                        if (loop) {
 
+                    if(isNet){
+                        // 去网络请求
+                        if (mList != null && mList.size() > 0) {
+                            ThreadUtils.runOnBackgroundThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    request(mList);
+                                }
+                            });
+
+                        }
+                    }else {
+                        if (loop) {
+                            Log.i(TAG, "onSearchStopped: ---------");
                             SystemClock.sleep(500);
                             senBle();
                         } else {
@@ -288,6 +364,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             mBtn_send_loop.setEnabled(true);
                         }
                     }
+
                 }
             }
 
@@ -295,9 +372,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onSearchCanceled() {
                 Log.i(TAG, "onSearchCanceled: -------走这里了吗:");
                 mPb_progress.setVisibility(View.INVISIBLE);
+
+
             }
         });
 
+    }
+
+    private void stopScan(){
+        mBtn_send.setEnabled(true);
+        mBtn_send_loop.setEnabled(true);
+        mBtn_save.setEnabled(true);
+
+        isNet = true;
+        loop = false;
+        scan = false; // 停止扫描
+        mList.clear();
     }
 
     private void request(List<BleBean> list) {

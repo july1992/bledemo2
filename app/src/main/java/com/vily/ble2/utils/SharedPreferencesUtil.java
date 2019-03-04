@@ -1,4 +1,4 @@
-package com.vily.ble2;
+package com.vily.ble2.utils;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -70,6 +70,25 @@ public class SharedPreferencesUtil {
     }
 
 
+    public static void saveint(Context context, String key, int value){
+        if (sp==null) {
+            sp = context.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+        }
+        sp.edit().putInt(key, value).commit();
+    }
 
+
+    /**
+     * 获取String类型信息
+     * @param key
+     * @param defValue
+     * @return
+     */
+    public static int getint(Context context, String key, int defValue){
+        if (sp == null) {
+            sp = context.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+        }
+        return sp.getInt(key, defValue);
+    }
 
 }

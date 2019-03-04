@@ -56,6 +56,25 @@
             android:layout_height="30dp"
             android:visibility="invisible"/>
     </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="开始扫描并保存数据"/>
+        <EditText
+            android:id="@+id/et_intervel"
+            android:layout_width="match_parent"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:text="20000"
+            android:hint="N秒后停止扫描，并保存数据"
+             />
+    </LinearLayout>
 
 
     <android.support.v7.widget.RecyclerView
